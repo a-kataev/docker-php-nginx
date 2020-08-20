@@ -1,0 +1,260 @@
+image: docker:stable
+
+services:
+  - docker:dind
+
+stages:
+  - build1
+  - build2
+  - test
+  - publish
+
+before_script:
+  - docker login -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}" "${CI_REGISTRY}"
+  - (if [[ -n "${DOCKERHUB_USER}" ]]; then docker login -u "${DOCKERHUB_USER}" -p "${DOCKERHUB_PASSWORD}"; fi)
+
+after_script:
+  - docker logout "${CI_REGISTRY}"
+  - (if [[ -n "${DOCKERHUB_USER}" ]]; then docker logout; fi)
+
+.set-build-image: &set-build-image
+  - BUILD_IMAGE=${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${IMAGE_NAME}
+
+.set-build-image-with-commit: &set-build-image-with-commit
+  - BUILD_IMAGE=${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${IMAGE_NAME}-${CI_COMMIT_SHORT_SHA}
+
+.set-build-args: &set-build-args
+  - BUILD_ARGS=" --build-arg NGINX_IMAGE=\"${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${NGINX_IMAGE}\""
+  - BUILD_ARGS="${BUILD_ARGS} --build-arg PHP_FPM_IMAGE=\"${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${PHP_FPM_IMAGE}\""
+
+.build-image: &build-image
+  - cd "${BUILD_PATH}"
+  - eval "
+      docker build --pull --force-rm ${BUILD_ARGS}
+        -t "${BUILD_IMAGE}" . >build.log 2>&1
+      " || ((tail -50 build.log | nl); exit 1)
+  - docker push "${BUILD_IMAGE}"
+
+.build-log-artifacts: &build-log-artifacts
+  artifacts:
+    paths:
+      - "${BUILD_PATH}/build.log"
+    expire_in: 6 hrs
+
+.test-image: &test-image
+  - chmod +x "${TEST_PATH}/test-php-ext.sh"
+  - docker run --rm -v "$(pwd)/${TEST_PATH}/test-php-ext.sh:/test.sh" -i "${BUILD_IMAGE}" /test.sh
+
+.set-publish-gitlab-image: &set-publish-gitlab-image
+  - PUBLISH_IMAGE=${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${GITLAB_IMAGE}
+
+.set-publish-gitlab-image-with-commit: &set-publish-gitlab-image-with-commit
+  - PUBLISH_IMAGE=${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${GITLAB_IMAGE}-${CI_COMMIT_SHORT_SHA}
+
+.set-publish-dockerhub-image: &set-publish-dockerhub-image
+  - PUBLISH_IMAGE=${DOCKERHUB_IMAGE}
+
+.publish-image: &publish-image
+  - docker pull "${BUILD_IMAGE}"
+  - docker tag "${BUILD_IMAGE}" "${PUBLISH_IMAGE}"
+  - docker push "${PUBLISH_IMAGE}"
+
+build-nginx-1.19:
+  stage: build1
+  variables:
+    BUILD_PATH: nginx-1.19
+    IMAGE_NAME: nginx-deb:1.19
+  script:
+    - set -x
+    - *set-build-image
+    - *build-image
+  <<: *build-log-artifacts
+  rules:
+    - changes:
+        - nginx-1.19/*
+
+build-php-fpm-ext-7.4:
+  stage: build1
+  variables:
+    BUILD_PATH: php-fpm-7.4
+    IMAGE_NAME: php-fpm-ext:7.4
+  script:
+    - set -x
+    - *set-build-image
+    - *build-image
+  <<: *build-log-artifacts
+  rules:
+    - changes:
+        - php-fpm-7.4/Dockerfile
+
+build-php-fpm-ext-7.3:
+  stage: build1
+  variables:
+    BUILD_PATH: php-fpm-7.3
+    IMAGE_NAME: php-fpm-ext:7.3
+  script:
+    - set -x
+    - *set-build-image
+    - *build-image
+  <<: *build-log-artifacts
+  rules:
+    - changes:
+        - php-fpm-7.4/Dockerfile
+
+build-php-fpm-ext-7.2:
+  stage: build1
+  variables:
+    BUILD_PATH: php-fpm-7.2
+    IMAGE_NAME: php-fpm-ext:7.2
+  script:
+    - set -x
+    - *set-build-image
+    - *build-image
+  <<: *build-log-artifacts
+  rules:
+    - changes:
+        - php-fpm-7.4/Dockerfile
+
+.php-nginx-7-4: &php-nginx-7-4
+  variables:
+    PHP_FPM_IMAGE: php-fpm-ext:7.4
+    NGINX_IMAGE: nginx-deb:1.19
+    BUILD_PATH: .
+    TEST_PATH: php-fpm-7.4
+    IMAGE_NAME: php-nginx:7.4
+    GITLAB_IMAGE: php-nginx:7.4
+    DOCKERHUB_IMAGE: ${DOCKERHUB_USER}/php-nginx:7.4
+  rules:
+    - changes:
+        - php-fpm-7.4/*
+        - Dockerfile
+        - docker-entrypoint.sh
+
+build-php-nginx-7.4:
+  stage: build2
+  <<: *php-nginx-7-4
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *set-build-args
+    - *build-image
+  <<: *build-log-artifacts
+
+test-php-nginx-7.4:
+  stage: test
+  <<: *php-nginx-7-4
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *test-image
+  needs:
+    - job: build-php-nginx-7.4
+
+publish-php-nginx-7.4:
+  stage: publish
+  <<: *php-nginx-7-4
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *set-publish-gitlab-image
+    - *publish-image
+    - *set-publish-dockerhub-image
+    - *publish-image
+  needs:
+    - job: test-php-nginx-7.4
+
+.php-nginx-7-3: &php-nginx-7-3
+  variables:
+    PHP_FPM_IMAGE: php-fpm-ext:7.3
+    NGINX_IMAGE: nginx-deb:1.19
+    BUILD_PATH: .
+    TEST_PATH: php-fpm-7.3
+    IMAGE_NAME: php-nginx:7.3
+    GITLAB_IMAGE: php-nginx:7.3
+    DOCKERHUB_IMAGE: ${DOCKERHUB_USER}/php-nginx:7.3
+  rules:
+    - changes:
+        - php-fpm-7.3/*
+        - Dockerfile
+        - docker-entrypoint.sh
+
+build-php-nginx-7.3:
+  stage: build2
+  <<: *php-nginx-7-3
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *set-build-args
+    - *build-image
+  <<: *build-log-artifacts
+
+test-php-nginx-7.3:
+  stage: test
+  <<: *php-nginx-7-3
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *test-image
+  needs:
+    - job: build-php-nginx-7.3
+
+publish-php-nginx-7.3:
+  stage: publish
+  <<: *php-nginx-7-3
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *set-publish-gitlab-image
+    - *publish-image
+    - *set-publish-dockerhub-image
+    - *publish-image
+  needs:
+    - job: test-php-nginx-7.3
+
+.php-nginx-7-2: &php-nginx-7-2
+  variables:
+    PHP_FPM_IMAGE: php-fpm-ext:7.2
+    NGINX_IMAGE: nginx-deb:1.19
+    BUILD_PATH: .
+    TEST_PATH: php-fpm-7.2
+    IMAGE_NAME: php-nginx:7.2
+    GITLAB_IMAGE: php-nginx:7.2
+    DOCKERHUB_IMAGE: ${DOCKERHUB_USER}/php-nginx:7.2
+  rules:
+    - changes:
+        - php-fpm-7.2/*
+        - Dockerfile
+        - docker-entrypoint.sh
+
+build-php-nginx-7.2:
+  stage: build2
+  <<: *php-nginx-7-2
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *set-build-args
+    - *build-image
+  <<: *build-log-artifacts
+
+test-php-nginx-7.2:
+  stage: test
+  <<: *php-nginx-7-2
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *test-image
+  needs:
+    - job: build-php-nginx-7.2
+
+publish-php-nginx-7.2:
+  stage: publish
+  <<: *php-nginx-7-2
+  script:
+    - set -x
+    - *set-build-image-with-commit
+    - *set-publish-gitlab-image
+    - *publish-image
+    - *set-publish-dockerhub-image
+    - *publish-image
+  needs:
+    - job: test-php-nginx-7.2
