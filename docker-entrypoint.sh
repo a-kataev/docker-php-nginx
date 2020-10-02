@@ -17,6 +17,7 @@ php_ext_enable() {
 }
 
 SERVICE_NAME="${SERVICE_NAME:-${SERVICE}}"
+SERVICE_MODE="${SERVICE_MODE:-normal}"
 
 if [[ "${1}" == 'composer' ]]; then
   set -- su -l www-data -s /bin/bash -c "${*}"
