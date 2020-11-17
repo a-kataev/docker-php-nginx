@@ -1,4 +1,4 @@
-FROM php:7.4.11-fpm-buster
+FROM php:7.4.12-fpm-buster
 
 RUN set -x && \
 #
