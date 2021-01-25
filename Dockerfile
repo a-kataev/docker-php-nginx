@@ -48,7 +48,7 @@ RUN set -x && \
 #
   curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer && \
 #
-  IONCUBE_SO="ioncube_loader_lin_$((php -r 'echo PHP_VERSION;' | grep -oE '7.[2-4]+') || echo -n '7.4').so"
+  IONCUBE_SO="ioncube_loader_lin_$((php -r 'echo PHP_VERSION;' | grep -oE '7.[3-4]+') || echo -n '7.4').so"
   curl -s https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz | \
     tar xzf - -C /usr/local/lib/php/extensions "ioncube/${IONCUBE_SO}" --strip-components=1 && \
   echo "zend_extension=/usr/local/lib/php/extensions/${IONCUBE_SO}" \
