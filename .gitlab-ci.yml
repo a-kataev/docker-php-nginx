@@ -99,7 +99,7 @@ build-php-fpm-ext-7.3:
   <<: *build-log-artifacts
   rules:
     - changes:
-        - php-fpm-7.4/Dockerfile
+        - php-fpm-7.3/Dockerfile
 
 .php-nginx-7-4: &php-nginx-7-4
   variables:
